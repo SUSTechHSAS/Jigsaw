@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>拼图挑战</title>
+<style>
+    :root {
+        --board-bg: #ffffff;
+        --background-color: #f0f2f5;
+        --primary-color: #1e88e5;
+        --primary-hover-color: #1976d2;
+        --danger-color: #f44336;
+        --success-color: #4CAF50;
+        --text-color: #333;
+        --border-radius: 8px;
+        --shadow: 0 4px 12px rgba(0,0,0,0.1);
+        --transition-speed: 0.25s;
+    }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        min-height: 100vh;
+        margin: 0;
+        padding: 15px;
+        background-color: var(--background-color);
+        box-sizing: border-box;
+    }
+    .game-wrapper {
+        width: 100%;
+        max-width: 500px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+    }
+    .controls, .piece-controls {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        justify-content: center;
+    }
+    .controls button, .piece-controls button {
+        flex-grow: 1;
+        font-size: 16px;
+        padding: 12px 15px;
+        border-radius: var(--border-radius);
+        border: none;
+        cursor: pointer;
+        background-color: white;
+        color: var(--text-color);
+        box-shadow: var(--shadow);
+        transition: transform var(--transition-speed) ease, background-color var(--transition-speed) ease;
+    }
+    .controls button:active, .piece-controls button:active {
+        transform: scale(0.95);
+    }
+    #new-game-btn { background-color: var(--success-color); color: white; }
+    #reset-btn { background-color: var(--danger-color); color: white; }
+    #hint-btn { background-color: var(--primary-color); color: white; }
+    .piece-controls {
+        visibility: hidden;
+        opacity: 0;
+        height: 0;
+        transition: opacity var(--transition-speed) ease, height var(--transition-speed) ease, visibility var(--transition-speed) ease;
+    }
+    .piece-controls.visible {
+        visibility: visible;
+        opacity: 1;
+        height: 42px; /* Adjust based on button padding */
+    }
+    #board-container {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 10px;
+    }
+    #status {
+        font-weight: bold;
+        color: var(--text-color);
+        min-height: 24px;
+        font-size: 16px;
+        text-align: center;
+        transition: color var(--transition-speed) ease;
+    }
+    #board {
+        display: grid;
+        border: 2px solid #777;
+        background-color: var(--board-bg);
+        box-shadow: var(--shadow);
+        transition: transform 0.3s ease, box-shadow 0.3s ease;
+    }
+    #board.error-shake {
+        transform: translateX(-5px);
+        animation: shake 0.4s 1;
+    }
+    @keyframes shake {
+        0%, 100% { transform: translateX(0); }
+        25% { transform: translateX(-6px); }
+        50% { transform: translateX(6px); }
+        75% { transform: translateX(-6px); }
+    }
+    .grid-cell {
+        box-sizing: border-box;
+        background-color: transparent;
+        border: 1px solid #ddd;
+        cursor: pointer;
+        transition: background-color 0.3s ease, border-color 0.2s ease;
+    }
+    .piece-container-wrapper {
+        padding: 15px;
+        background: #fff;
+        border-radius: var(--border-radius);
+        box-shadow: var(--shadow);
+    }
+    h3 { margin-top: 0; margin-bottom: 15px; color: var(--text-color); text-align: center; }
+    #piece-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        align-content: flex-start;
+        justify-content: center;
+        min-height: 50px;
+    }
+    .piece-preview {
+        display: grid;
+        gap: 1px;
+        border: 2px solid #ccc;
+        cursor: pointer;
+        transition: transform var(--transition-speed) ease, box-shadow var(--transition-speed) ease;
+        border-radius: 4px;
+    }
+    .piece-preview.selected {
+        transform: scale(1.1);
+        box-shadow: 0 0 15px var(--primary-color);
+        border-color: var(--primary-color);
+    }
+    .preview-block { width: 10px; height: 10px; }
+    /* Modal for win message */
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.6); display: flex; justify-content: center;
+        align-items: center; z-index: 1000;
+        opacity: 0; visibility: hidden; transition: opacity 0.4s ease, visibility 0.4s ease;
+    }
+    .modal-overlay.visible { opacity: 1; visibility: visible; }
+    .modal-content {
+        background: white; padding: 30px; border-radius: 15px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.3); text-align: center;
+        transform: scale(0.8); transition: transform 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    .modal-overlay.visible .modal-content { transform: scale(1); }
+    .modal-content h2 { margin-top: 0; color: var(--success-color); }
+    .modal-content button {
+        font-size: 16px; padding: 10px 20px; border-radius: var(--border-radius);
+        border: none; cursor: pointer; background-color: var(--primary-color);
+        color: white; margin-top: 20px;
+    }
+</style>
+</head>
+<body>
+
+<div class="game-wrapper">
+    <div class="controls">
+        <button id="new-game-btn">新游戏</button>
+        <button id="reset-btn">重置</button>
+        <button id="hint-btn">提示</button>
+    </div>
+
+    <div id="board-container">
+        <div id="status">欢迎来到拼图挑战！</div>
+        <div id="board"></div>
+    </div>
+    
+    <div class="piece-controls" id="piece-controls">
+        <button id="rotate-btn">旋转</button>
+        <button id="flip-btn">镜像</button>
+    </div>
+
+    <div class="piece-container-wrapper">
+        <h3>可用拼图块</h3>
+        <div id="piece-container"></div>
+    </div>
+</div>
+
+<div id="win-modal" class="modal-overlay">
+    <div class="modal-content">
+        <h2>恭喜！</h2>
+        <p>您成功地完成了拼图！</p>
+        <button id="win-new-game-btn">再来一局</button>
+    </div>
+</div>
+
+<script>
+    const state = {
+        grid: [],
+        rows: 0,
+        cols: 0,
+        pieces: [],
+        solutionPieces: new Set(),
+        solutionLayout: [],
+        activePieceId: null,
+        activeOrientationIndex: 0,
+        isSolved: false,
+    };
+
+    
+    const boardElement = document.getElementById('board');
+    const pieceContainer = document.getElementById('piece-container');
+    const statusDiv = document.getElementById('status');
+    const newGameBtn = document.getElementById('new-game-btn');
+    const resetBtn = document.getElementById('reset-btn');
+    const hintBtn = document.getElementById('hint-btn');
+    const rotateBtn = document.getElementById('rotate-btn');
+    const flipBtn = document.getElementById('flip-btn');
+    const pieceControls = document.getElementById('piece-controls');
+    const winModal = document.getElementById('win-modal');
+    const winNewGameBtn = document.getElementById('win-new-game-btn');
+
+    
+    const BASE_PIECES = [
+        
+        { shape: [[0,0],[0,1],[0,2],[0,3],[0,4]] }, 
+        { shape: [[0,0],[1,0],[1,1],[2,1],[2,2]] }, 
+        { shape: [[0,1],[1,1],[2,1],[2,0],[0,2]] }, 
+        { shape: [[0,0],[1,0],[1,1],[2,1],[0,1]] }, 
+        { shape: [[0,1],[1,0],[1,1],[1,2],[2,1]] }, 
+        { shape: [[0,0],[1,0],[2,0],[1,1],[1,2]] }, 
+        { shape: [[0,0],[1,0],[2,0],[2,1],[2,2]] }, 
+        { shape: [[0,0],[0,1],[1,1],[1,2],[2,2]] }, 
+        { shape: [[0,2],[1,1],[1,2],[2,0],[2,1]] }, 
+        { shape: [[0,0],[0,1],[0,2],[1,2],[2,2]] }, 
+        { shape: [[0,0],[1,0],[1,1],[2,1],[2,0]] }, 
+        { shape: [[0,0],[0,1],[1,0],[1,1],[0,2]] }, 
+        
+        { shape: [[0,0],[0,1],[0,2],[0,3]] }, 
+        { shape: [[0,0],[1,0],[0,1],[1,1]] }, 
+        { shape: [[0,0],[1,0],[2,0],[1,1]] }, 
+        { shape: [[0,0],[1,0],[1,1],[2,1]] }, 
+        { shape: [[0,1],[1,1],[1,0],[2,0]] }, 
+        { shape: [[0,0],[1,0],[2,0],[2,1]] }, 
+        { shape: [[0,1],[1,1],[2,1],[2,0]] }, 
+        { shape: [[0,0],[1,0],[1,1]] }, 
+        { shape: [[0,0],[1,0]] }, 
+    ];
+    const COLORS = ["#e53935", "#1e88e5", "#43a047", "#fdd835", "#8e24aa", "#fb8c00", "#00acc1", "#d81b60"];
+
+    
+    function initGame() {
+        state.isSolved = false;
+        winModal.classList.remove('visible');
+        statusDiv.textContent = '正在生成新谜题...';
+        
+        
+        setTimeout(() => {
+            const puzzle = generatePuzzle();
+            if (!puzzle) {
+                statusDiv.textContent = '生成谜题失败，请重试！';
+                return;
+            }
+
+            state.rows = puzzle.rows;
+            state.cols = puzzle.cols;
+            state.pieces = puzzle.allPieces;
+            state.solutionPieces = puzzle.solutionPieces;
+            state.solutionLayout = puzzle.solutionLayout;
+            state.activePieceId = null;
+            state.activeOrientationIndex = 0;
+
+            setupBoard();
+            renderPieces();
+            updatePieceControlsVisibility();
+            statusDiv.textContent = '新游戏开始！请选择一个拼图块。';
+        }, 100);
+    }
+    
+    function generatePuzzle() {
+        
+        const boardSizes = [[6,5], [5,6], [7,5], [5,7], [6,6], [4,5], [4,4], [4,6]];
+        const [rows, cols] = boardSizes[Math.floor(Math.random() * boardSizes.length)];
+        const boardArea = rows * cols;
+
+        let attempts = 0;
+        while(attempts < 500) {
+            attempts++;
+            let tempPieces = [...BASE_PIECES].sort(() => 0.5 - Math.random());
+            let currentArea = 0;
+            let solutionPiecesSet = [];
+
+            for(const pieceShape of tempPieces) {
+                if(currentArea + pieceShape.shape.length <= boardArea) {
+                    solutionPiecesSet.push(pieceShape);
+                    currentArea += pieceShape.shape.length;
+                }
+            }
+            
+            if(currentArea !== boardArea) continue; 
+
+            
+            const piecesToSolve = preprocessPieces(solutionPiecesSet);
+            const solverGrid = Array(rows).fill(null).map(() => Array(cols).fill(0));
+            const solution = findFirstSolution(solverGrid, piecesToSolve, rows, cols);
+
+            if(solution) {
+                
+                const distractorCount = Math.floor(Math.random() * 2) + 2; 
+                const distractorPieces = generateDistractors(solutionPiecesSet, distractorCount);
+                
+                const allPieces = preprocessPieces([...solutionPiecesSet, ...distractorPieces])
+                                  .sort(() => 0.5 - Math.random());
+
+                return {
+                    rows,
+                    cols,
+                    allPieces,
+                    solutionPieces: new Set(piecesToSolve.map(p => p.id)),
+                    solutionLayout: solution
+                };
+            }
+        }
+        console.error("Failed to generate a solvable puzzle after multiple attempts.");
+        return null; 
+    }
+
+    function generateDistractors(solutionPiecesSet, count) {
+        const distractors = [];
+        const usedShapes = new Set(solutionPiecesSet.map(p => JSON.stringify(p.shape)));
+        const availableBasePieces = BASE_PIECES.filter(p => !usedShapes.has(JSON.stringify(p.shape)));
+        
+        for(let i=0; i < count && i < availableBasePieces.length; i++) {
+            distractors.push(availableBasePieces[i]);
+        }
+        return distractors;
+    }
+
+    function setupBoard() {
+        const mainContentWidth = document.querySelector('.game-wrapper').offsetWidth;
+        const availableWidth = mainContentWidth - 40; 
+        const CELL_SIZE = Math.floor(Math.min(availableWidth / state.cols, (window.innerHeight * 0.4) / state.rows, 60));
+
+        boardElement.innerHTML = '';
+        boardElement.style.gridTemplateRows = `repeat(${state.rows}, ${CELL_SIZE}px)`;
+        boardElement.style.gridTemplateColumns = `repeat(${state.cols}, ${CELL_SIZE}px)`;
+        boardElement.style.width = `${state.cols * CELL_SIZE}px`;
+        boardElement.style.height = `${state.rows * CELL_SIZE}px`;
+        
+        state.grid = Array(state.rows).fill(0).map(() => Array(state.cols).fill(0));
+        
+        for (let r = 0; r < state.rows; r++) {
+            for (let c = 0; c < state.cols; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.dataset.r = r;
+                cell.dataset.c = c;
+                boardElement.appendChild(cell);
+            }
+        }
+        renderGrid();
+    }
+
+    function renderGrid() {
+        const cells = boardElement.children;
+        const BORDER_STYLE = '2px solid #333';
+        const DEFAULT_BORDER = '1px solid #ddd';
+
+        for (let r = 0; r < state.rows; r++) {
+            for (let c = 0; c < state.cols; c++) {
+                const cellIndex = r * state.cols + c;
+                const cellDiv = cells[cellIndex];
+                const gridCell = state.grid[r][c];
+
+                if (gridCell === 0) {
+                    cellDiv.style.backgroundColor = 'transparent';
+                    cellDiv.style.border = DEFAULT_BORDER;
+                    cellDiv.style.cursor = state.activePieceId ? 'pointer' : 'default';
+                } else {
+                    cellDiv.style.backgroundColor = gridCell.color;
+                    cellDiv.style.cursor = 'pointer';
+                    
+                    cellDiv.style.borderTop = (r === 0 || state.grid[r-1][c]?.id !== gridCell.id) ? BORDER_STYLE : 'none';
+                    cellDiv.style.borderBottom = (r === state.rows - 1 || state.grid[r+1][c]?.id !== gridCell.id) ? BORDER_STYLE : 'none';
+                    cellDiv.style.borderLeft = (c === 0 || state.grid[r][c-1]?.id !== gridCell.id) ? BORDER_STYLE : 'none';
+                    cellDiv.style.borderRight = (c === state.cols - 1 || state.grid[r][c+1]?.id !== gridCell.id) ? BORDER_STYLE : 'none';
+                }
+            }
+        }
+    }
+
+    function renderPieces() {
+        pieceContainer.innerHTML = '';
+        state.pieces.forEach(piece => {
+            if (!isPieceOnBoard(piece.id)) {
+                const pieceEl = createPieceElement(piece, state.activeOrientationIndex);
+                pieceContainer.appendChild(pieceEl);
+            }
+        });
+        updateSelectionHighlight();
+    }
+
+    function createPieceElement(piece, orientationIndex) {
+        const piecePreview = document.createElement('div');
+        piecePreview.className = 'piece-preview';
+        piecePreview.dataset.pieceId = piece.id;
+
+        const orientation = piece.id === state.activePieceId 
+                          ? piece.orientations[orientationIndex] 
+                          : piece.orientations[0];
+        
+        const minR = Math.min(...orientation.map(p => p[0]));
+        const maxR = Math.max(...orientation.map(p => p[0]));
+        const minC = Math.min(...orientation.map(p => p[1]));
+        const maxC = Math.max(...orientation.map(p => p[1]));
+
+        const height = maxR - minR + 1;
+        const width = maxC - minC + 1;
+        
+        piecePreview.style.gridTemplateColumns = `repeat(${width}, 10px)`;
+        piecePreview.style.gridTemplateRows = `repeat(${height}, 10px)`;
+        
+        const tempGrid = Array(height).fill(null).map(() => Array(width).fill(false));
+        orientation.forEach(([r,c]) => { tempGrid[r - minR][c - minC] = true; });
+
+        for (let r = 0; r < height; r++) {
+            for (let c = 0; c < width; c++) {
+                const block = document.createElement('div');
+                block.className = 'preview-block';
+                if (tempGrid[r][c]) block.style.backgroundColor = piece.color;
+                piecePreview.appendChild(block);
+            }
+        }
+        return piecePreview;
+    }
+
+    
+    function handleBoardClick(e) {
+        if (state.isSolved) return;
+        const cell = e.target.closest('.grid-cell');
+        if (!cell) return;
+        
+        const r = parseInt(cell.dataset.r);
+        const c = parseInt(cell.dataset.c);
+
+        if (state.activePieceId) {
+            
+            const piece = getPieceById(state.activePieceId);
+            const shape = piece.orientations[state.activeOrientationIndex];
+            
+            if (canPlace(r, c, shape)) {
+                place(r, c, shape, piece.id, piece.color);
+                deselectActivePiece();
+                renderGrid();
+                renderPieces();
+                checkWinCondition();
+            } else {
+                statusDiv.textContent = '不能放在这里！';
+                statusDiv.style.color = 'var(--danger-color)';
+                boardElement.classList.add('error-shake');
+                setTimeout(() => {
+                   boardElement.classList.remove('error-shake');
+                   statusDiv.textContent = '';
+                   statusDiv.style.color = 'var(--text-color)';
+                }, 500);
+            }
+        } else if (state.grid[r][c] !== 0) {
+            
+            const pieceIdToRemove = state.grid[r][c].id;
+            const piece = getPieceById(pieceIdToRemove);
+            
+            for(let br=0; br < state.rows; br++) {
+                for(let bc=0; bc < state.cols; bc++) {
+                    if(state.grid[br][bc]?.id === pieceIdToRemove) {
+                        state.grid[br][bc] = 0;
+                    }
+                }
+            }
+            deselectActivePiece();
+            renderGrid();
+            renderPieces();
+        }
+    }
+
+    function handlePieceSelect(e) {
+        if (state.isSolved) return;
+        const pieceEl = e.target.closest('.piece-preview');
+        if (!pieceEl) return;
+        
+        const pieceId = pieceEl.dataset.pieceId;
+        if (state.activePieceId === pieceId) {
+            deselectActivePiece();
+        } else {
+            state.activePieceId = pieceId;
+            state.activeOrientationIndex = 0;
+            statusDiv.textContent = '请在棋盘上选择一个位置';
+            updateSelectionHighlight();
+            updatePieceControlsVisibility();
+            rerenderActivePiecePreview();
+        }
+    }
+
+    function handleRotate() {
+        if (!state.activePieceId) return;
+        const piece = getPieceById(state.activePieceId);
+        state.activeOrientationIndex = (state.activeOrientationIndex + 1) % piece.orientations.length;
+        rerenderActivePiecePreview();
+    }
+    
+    function handleFlip() {
+       if (!state.activePieceId) return;
+        const piece = getPieceById(state.activePieceId);
+        const currentShape = piece.orientations[state.activeOrientationIndex];
+        
+        
+        const flippedShape = normalizeShape(currentShape.map(([r, c]) => [r, -c]));
+        const flippedString = JSON.stringify(flippedShape);
+
+        const flippedIndex = piece.orientations.findIndex(o => JSON.stringify(o) === flippedString);
+
+        if (flippedIndex !== -1) {
+            state.activeOrientationIndex = flippedIndex;
+            rerenderActivePiecePreview();
+        }
+    }
+
+    function handleHint() {
+        if (state.isSolved) return;
+        
+        
+        for (const placement of state.solutionLayout) {
+            const pieceId = placement.piece.id;
+            if (!isPieceOnBoard(pieceId)) {
+                
+                for(let br=0; br < state.rows; br++) {
+                    for(let bc=0; bc < state.cols; bc++) {
+                        if(state.grid[br][bc]?.id === pieceId) {
+                            state.grid[br][bc] = 0;
+                        }
+                    }
+                }
+                
+                
+                const shape = placement.piece.orientations[placement.orientationIndex];
+                place(placement.r, placement.c, shape, pieceId, placement.piece.color);
+                
+                deselectActivePiece();
+                renderGrid();
+                renderPieces();
+                checkWinCondition();
+                statusDiv.textContent = "提示：已放置一个正确的拼图块。";
+                return;
+            }
+        }
+        statusDiv.textContent = "所有正确的拼图块都已在棋盘上！";
+    }
+
+    
+    function checkWinCondition() {
+        const isFull = state.grid.every(row => row.every(cell => cell !== 0));
+        if (isFull) {
+            state.isSolved = true;
+            statusDiv.textContent = '成功！';
+            winModal.classList.add('visible');
+        }
+    }
+
+    function canPlace(r, c, shape) {
+        for (const [dr, dc] of shape) {
+            const newR = r + dr;
+            const newC = c + dc;
+            if (newR < 0 || newC < 0 || newR >= state.rows || newC >= state.cols || state.grid[newR][newC] !== 0) {
+                return false;
+            }
+        }
+        return true;
+    }
+    
+    function place(r, c, shape, id, color) {
+        shape.forEach(([dr, dc]) => {
+            const pieceIdToRemove = state.grid[r+dr][c+dc].id;
+            if (pieceIdToRemove) {
+            const piece = getPieceById(pieceIdToRemove);
+            
+            for(let br=0; br < state.rows; br++) {
+                for(let bc=0; bc < state.cols; bc++) {
+                    if(state.grid[br][bc]?.id === pieceIdToRemove) {
+                        state.grid[br][bc] = 0;
+                    }
+                }
+            }
+            deselectActivePiece();
+            renderGrid();
+            renderPieces();
+            }
+            state.grid[r + dr][c + dc] = { id, color };
+        });
+    }
+
+    function deselectActivePiece() {
+        state.activePieceId = null;
+        updateSelectionHighlight();
+        updatePieceControlsVisibility();
+    }
+    
+    function updateSelectionHighlight() {
+        const allPreviews = pieceContainer.querySelectorAll('.piece-preview');
+        allPreviews.forEach(p => {
+            if (p.dataset.pieceId === state.activePieceId) {
+                p.classList.add('selected');
+            } else {
+                p.classList.remove('selected');
+            }
+        });
+    }
+    
+    function rerenderActivePiecePreview() {
+        const activePreview = pieceContainer.querySelector(`[data-piece-id="${state.activePieceId}"]`);
+        if(activePreview) {
+             const piece = getPieceById(state.activePieceId);
+             const newPreview = createPieceElement(piece, state.activeOrientationIndex);
+             newPreview.classList.add('selected');
+             activePreview.replaceWith(newPreview);
+        }
+    }
+
+    function updatePieceControlsVisibility() {
+        if (state.activePieceId) {
+            pieceControls.classList.add('visible');
+        } else {
+            pieceControls.classList.remove('visible');
+        }
+    }
+    
+    function getPieceById(id) { return state.pieces.find(p => p.id === id); }
+    function isPieceOnBoard(id) { return state.grid.flat().some(cell => cell.id === id); }
+
+    
+    function preprocessPieces(rawPieces) {
+        let pieceIdCounter = 0;
+        let colorIndex = 0;
+        return rawPieces.map(p => {
+            const piece = {
+                ...p,
+                id: `p-${pieceIdCounter++}`,
+                color: COLORS[colorIndex % COLORS.length],
+                orientations: generatePieceOrientations(p.shape),
+                size: p.shape.length
+            };
+            colorIndex++;
+            return piece;
+        });
+    }
+
+    function generatePieceOrientations(shape) {
+        const orientations = new Set();
+        let currentShape = shape;
+        for (let i = 0; i < 4; i++) {
+            addShape(orientations, normalizeShape(currentShape));
+            addShape(orientations, normalizeShape(currentShape.map(([r, c]) => [r, -c]))); 
+            currentShape = currentShape.map(([r, c]) => [c, -r]); 
+        }
+        return Array.from(orientations).map(s => JSON.parse(s));
+    }
+    
+    function normalizeShape(shape) {
+        const minR = Math.min(...shape.map(p => p[0]));
+        const minC = Math.min(...shape.map(p => p[1]));
+        return shape.map(([r, c]) => [r - minR, c - minC]).sort((a,b) => a[0] - b[0] || a[1] - b[1]);
+    }
+
+    function addShape(set, shape) {
+        set.add(JSON.stringify(shape));
+    }
+    
+    
+    function findFirstSolution(grid, pieces, rows, cols, placements = []) {
+        const pos = findNextEmptyCell(grid, rows, cols);
+        if (pos === null) {
+            return placements; 
+        }
+        
+        const { r, c } = pos;
+
+        for (let i = 0; i < pieces.length; i++) {
+            const piece = pieces[i];
+            if (piece.used) continue;
+
+            for (let j = 0; j < piece.orientations.length; j++) {
+                const orientation = piece.orientations[j];
+                if (canPlaceSolver(grid, r, c, orientation, rows, cols)) {
+                    placeSolver(grid, r, c, orientation, piece.id);
+                    piece.used = true;
+                    
+                    const result = findFirstSolution(grid, pieces, rows, cols, [...placements, { piece, orientationIndex: j, r, c }]);
+                    if (result) return result; 
+                    
+                    removeSolver(grid, r, c, orientation);
+                    piece.used = false;
+                }
+            }
+        }
+        return null; 
+    }
+
+    function findNextEmptyCell(grid, rows, cols) {
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                if (grid[r][c] === 0) return { r, c };
+            }
+        }
+        return null;
+    }
+
+    function canPlaceSolver(grid, r, c, shape, rows, cols) {
+        return shape.every(([dr, dc]) => {
+            const newR = r + dr, newC = c + dc;
+            return newR >= 0 && newC >= 0 && newR < rows && newC < cols && grid[newR][newC] === 0;
+        });
+    }
+
+    function placeSolver(grid, r, c, shape, id) { shape.forEach(([dr, dc]) => { grid[r + dr][c + dc] = id; }); }
+    function removeSolver(grid, r, c, shape) { shape.forEach(([dr, dc]) => { grid[r + dr][c + dc] = 0; }); }
+
+    
+    newGameBtn.addEventListener('click', initGame);
+    resetBtn.addEventListener('click', () => {
+        if(state.rows > 0) { 
+            setupBoard();
+            renderPieces();
+            deselectActivePiece();
+            statusDiv.textContent = '棋盘已重置。';
+        }
+    });
+    hintBtn.addEventListener('click', handleHint);
+    winNewGameBtn.addEventListener('click', initGame);
+    winModal.addEventListener('click', (e) => {
+        if (e.target === winModal) winModal.classList.remove('visible');
+    });
+
+    boardElement.addEventListener('click', handleBoardClick);
+    pieceContainer.addEventListener('click', handlePieceSelect);
+    rotateBtn.addEventListener('click', handleRotate);
+    flipBtn.addEventListener('click', handleFlip);
+
+    
+    document.addEventListener('DOMContentLoaded', initGame);
+</script>
+</body>
+</html>

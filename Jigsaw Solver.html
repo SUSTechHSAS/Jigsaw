@@ -1,0 +1,807 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>拼图求解器</title>
+<style>
+    :root {
+        --animation-duration: 0.2s;
+        --animation-timing-fast: ease-out;
+        --animation-timing-bounce: cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    }
+    body {
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+        display: flex;
+        justify-content: center;
+        align-items: flex-start;
+        padding: 20px;
+        background-color: #f4f7f6;
+        gap: 30px;
+        flex-wrap: wrap;
+    }
+    .main-content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        flex-shrink: 0;
+    }
+    .controls {
+        margin-bottom: 20px;
+        padding: 15px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: center;
+    }
+    .controls label, .controls input, .controls button {
+        font-size: 16px;
+        padding: 8px 12px;
+        border-radius: 5px;
+        border: 1px solid #ccc;
+    }
+    .controls input { width: 60px; text-align: center; }
+    .controls button { cursor: pointer; background-color: #e9e9e9; transition: background-color 0.2s, opacity 0.2s; }
+    .controls button:hover { background-color: #dcdcdc; }
+    .controls button:active { background-color: #d0d0d0; }
+    .controls button:disabled { background-color: #f0f0f0; color: #aaa; cursor: not-allowed; }
+
+    #solve-btn, #continue-solve-btn { background-color: #4CAF50; color: white; border-color: #4CAF50;}
+    #solve-btn:hover, #continue-solve-btn:hover { background-color: #45a049; }
+    #stop-btn { background-color: #f44336; color: white; border-color: #f44336; display: none; }
+    #stop-btn:hover { background-color: #d32f2f; }
+    .solution-nav button { background-color: #1E88E5; color: white; }
+    .solution-nav button:hover { background-color: #1976D2; }
+    
+    #board {
+        display: grid;
+        border: 2px solid #555;
+        background-color: #fff;
+        box-shadow: 0 6px 15px rgba(0,0,0,0.15);
+        transition: transform var(--animation-duration) var(--animation-timing-fast), 
+                    opacity var(--animation-duration) var(--animation-timing-fast);
+    }
+    .grid-cell {
+        box-sizing: border-box;
+        background-color: transparent;
+        transition: background-color 0.3s ease, border-color 0.2s ease, border-width 0.1s ease;
+    }
+    .sidebar {
+        width: 320px;
+        display: flex;
+        flex-direction: column;
+        gap: 20px;
+        flex-shrink: 0;
+    }
+    .piece-container-wrapper {
+        padding: 15px;
+        background: #fff;
+        border-radius: 8px;
+        box-shadow: 0 4px 12px rgba(0,0,0,0.1);
+    }
+    h3 { margin-top: 0; color: #333; }
+    #piece-container {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 15px;
+        align-content: flex-start;
+        min-height: 50px;
+    }
+    .piece-preview-wrapper {
+        position: relative;
+        transition: transform var(--animation-duration) var(--animation-timing-bounce), 
+                    opacity var(--animation-duration) var(--animation-timing-fast);
+    }
+    .piece-preview-wrapper.removing {
+        transform: scale(0.5);
+        opacity: 0;
+    }
+    .piece-preview { display: grid; gap: 1px; border: 1px solid #ccc; cursor: help; }
+    .preview-block { width: 12px; height: 12px; }
+    .delete-piece-btn {
+        position: absolute; top: -8px; right: -8px; width: 20px; height: 20px;
+        background: #f44336; color: white; border: none; border-radius: 50%;
+        cursor: pointer; font-weight: bold; display: flex; justify-content: center;
+        align-items: center; line-height: 1; font-size: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+    }
+    .modal-overlay {
+        position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+        background: rgba(0,0,0,0.5); display: flex; justify-content: center;
+        align-items: center; z-index: 1000; transition: opacity 0.3s ease;
+    }
+    .modal-content {
+        background: white; padding: 25px; border-radius: 10px;
+        box-shadow: 0 5px 20px rgba(0,0,0,0.3); text-align: center;
+        transform: scale(0.95); opacity: 0;
+        transition: transform 0.3s var(--animation-timing-bounce), opacity 0.3s ease;
+    }
+    .modal-overlay.visible .modal-content { transform: scale(1); opacity: 1; }
+    #creator-grid {
+        display: grid; grid-template-columns: repeat(5, 40px); gap: 2px;
+        margin: 20px auto; border: 1px solid #ccc; width: max-content;
+    }
+    .creator-cell {
+        width: 40px; height: 40px; background-color: #eee; cursor: pointer;
+        border: 1px solid #ddd; transition: background-color 0.2s ease, border-color 0.2s ease;
+    }
+    .creator-cell.selected { background-color: #3498db; border-color: #2980b9; }
+    #status {
+        margin-top: 15px; font-weight: bold; color: #333;
+        min-height: 24px; font-size: 16px; text-align: center;
+    }
+    @media (max-width: 820px) {
+        body { flex-direction: column; align-items: center; }
+        .sidebar { width: 100%; max-width: 450px; }
+    }
+</style>
+</head>
+<body>
+
+<div class="main-content">
+    <div class="controls">
+        <label for="rows">行:</label>
+        <input type="number" id="rows" value="8" min="1" max="20">
+        <label for="cols">列:</label>
+        <input type="number" id="cols" value="8" min="1" max="20">
+        <button id="setup-btn">设置棋盘</button>
+        <button id="solve-btn">开始求解</button>
+        <button id="continue-solve-btn" style="display: none;">继续求解</button>
+        <button id="stop-btn">停止求解</button>
+        <button id="clear-btn">清空棋盘</button>
+    </div>
+     <div class="controls solution-nav" id="solution-nav-controls" style="display: none;">
+        <button id="prev-solution-btn">上一解</button>
+        <span id="solution-info"></span>
+        <button id="next-solution-btn">下一解</button>
+    </div>
+    <div id="board"></div>
+    <div id="status">请设置棋盘并添加拼图块。</div>
+</div>
+
+<div class="sidebar">
+    <div class="piece-container-wrapper">
+        <h3>可用拼图块</h3>
+        <div id="piece-container"></div>
+        <button id="create-piece-btn" style="width: 100%; margin-top: 15px;">创建新拼图块</button>
+        <div class="controls" style="margin-top: 15px; padding: 10px; flex-direction: column; width: 100%; box-sizing: border-box;">
+             <button id="export-btn" style="width: 100%;">导出配置</button>
+             <button id="import-btn" style="width: 100%;">导入配置</button>
+             <input type="file" id="import-file" accept=".json" style="display:none;">
+        </div>
+    </div>
+</div>
+
+<div id="creator-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <h3>绘制新的拼图块 (5x5)</h3>
+        <div id="creator-grid"></div>
+        <div>
+            <label for="piece-color">选择颜色:</label>
+            <input type="color" id="piece-color" value="#E53935">
+        </div>
+        <div style="margin-top: 20px;">
+            <button id="save-piece-btn">保存拼图块</button>
+            <button id="cancel-creator-btn">取消</button>
+        </div>
+    </div>
+</div>
+
+<script>
+    const state = {
+        grid: [],
+        previousGrid: [], 
+        pieces: [],
+        pieceIdCounter: 0,
+        isSolving: false,
+        solverGenerator: null,
+        solutions: [],
+        currentSolutionIndex: -1,
+        nodesVisited: 0,
+        rows: 0,
+        cols: 0
+    };
+
+        
+    const { board: boardElement, pieceContainer, rows: rowsInput, cols: colsInput, setupBtn, solveBtn, continueSolveBtn, stopBtn, clearBtn, createPieceBtn, exportBtn, importBtn, importFile, creatorModal, creatorGrid, savePieceBtn, cancelCreatorBtn, pieceColor: pieceColorInput, status: statusDiv, solutionNavControls, prevSolutionBtn, nextSolutionBtn, solutionInfo } = (function() {
+        const ids = ["board", "piece-container", "rows", "cols", "setup-btn", "solve-btn", "continue-solve-btn", "stop-btn", "clear-btn", "create-piece-btn", "export-btn", "import-btn", "import-file", "creator-modal", "creator-grid", "save-piece-btn", "cancel-creator-btn", "piece-color", "status", "solution-nav-controls", "prev-solution-btn", "next-solution-btn", "solution-info"];
+        const elements = {};
+        ids.forEach(id => {
+            const key = id.replace(/-./g, x => x[1].toUpperCase());
+            elements[key] = document.getElementById(id);
+        });
+        return elements;
+    })();
+    
+    let CELL_SIZE = 40;
+    const BORDER_STYLE = '2px solid #222'; 
+
+    const DEFAULT_BORDER_STYLE = '1px solid #555';
+
+    const initialPieces = [
+        { id: 'red-p', color: '#e53935', shape: [[0,0],[0,1],[1,1],[0,2],[1,2]] },
+        { id: 'red-t', color: '#e53935', shape: [[0,0],[1,0],[2,0],[1,1],[1,2]] },
+        { id: 'blue-t', color: '#1e88e5', shape: [[0,0],[1,0],[2,0],[1,1],[1,2]] },
+        { id: 'blue-x', color: '#1e88e5', shape: [[1,0],[0,1],[1,1],[2,1],[1,2]] },
+        { id: 'green-t', color: '#43a047', shape: [[0,0],[1,0],[2,0],[1,1],[1,2]] },
+        { id: 'yellow-x', color: '#fdd835', shape: [[1,0],[0,1],[1,1],[2,1],[1,2]] },
+    ];
+
+    function resetSolverState() {
+        state.solverGenerator = null;
+        state.solutions = [];
+        state.currentSolutionIndex = -1;
+        state.nodesVisited = 0;
+        solveBtn.style.display = 'inline-block';
+        continueSolveBtn.style.display = 'none';
+        solutionNavControls.style.display = 'none';
+        solveBtn.disabled = false;
+    }
+
+    function setupBoard() {
+        if(state.isSolving) stopSolver();
+        resetSolverState();
+        state.rows = parseInt(rowsInput.value);
+        state.cols = parseInt(colsInput.value);
+
+        if (isNaN(state.rows) || isNaN(state.cols) || state.rows < 1 || state.cols < 1) {
+            statusDiv.textContent = "请输入有效的行数和列数。";
+            return;
+        }
+
+        const mainContentWidth = document.querySelector('.main-content').offsetWidth;
+        const availableWidth = mainContentWidth - 40;
+        CELL_SIZE = Math.floor(Math.min(availableWidth / state.cols, (window.innerHeight * 0.7) / state.rows, 50));
+        
+        boardElement.style.transform = 'scale(0.95)';
+        boardElement.style.opacity = '0';
+        boardElement.innerHTML = '';
+        boardElement.style.gridTemplateRows = `repeat(${state.rows}, ${CELL_SIZE}px)`;
+        boardElement.style.gridTemplateColumns = `repeat(${state.cols}, ${CELL_SIZE}px)`;
+        boardElement.style.width = `${state.cols * CELL_SIZE}px`;
+        boardElement.style.height = `${state.rows * CELL_SIZE}px`;
+        
+        state.grid = Array(state.rows).fill(0).map(() => Array(state.cols).fill(0));
+        state.previousGrid = Array(state.rows).fill(0).map(() => Array(state.cols).fill(0));
+        
+        for (let r = 0; r < state.rows; r++) {
+            for (let c = 0; c < state.cols; c++) {
+                const cell = document.createElement('div');
+                cell.className = 'grid-cell';
+                cell.style.border = DEFAULT_BORDER_STYLE;
+                boardElement.appendChild(cell);
+            }
+        }
+        requestAnimationFrame(() => {
+            boardElement.style.transform = 'scale(1)';
+            boardElement.style.opacity = '1';
+        });
+        statusDiv.textContent = "棋盘已设置。准备求解！";
+    }
+function generatePieceOrientations(shape) {
+    const orientations = new Set();
+
+    
+    function addShape(set, shapeToAdd) {
+        const sortedShape = shapeToAdd.slice().sort((a, b) => a[0] - b[0] || a[1] - b[1]);
+        set.add(JSON.stringify(sortedShape));
+    }
+
+    
+    for (let i = 0; i < shape.length; i++) {
+        const anchorR = shape[i][0];
+        const anchorC = shape[i][1];
+
+        
+        let currentAnchoredShape = shape.map(([r, c]) => [r - anchorR, c - anchorC]);
+
+        
+        for (let j = 0; j < 4; j++) {
+            
+            addShape(orientations, currentAnchoredShape);
+            
+            const flippedShape = currentAnchoredShape.map(([r, c]) => [r, -c]);
+            addShape(orientations, flippedShape);
+
+            
+            currentAnchoredShape = currentAnchoredShape.map(([r, c]) => [c, -r]);
+        }
+    }
+
+    
+    return Array.from(orientations).map(s => JSON.parse(s));
+}
+
+    
+    function flip(shape) { return normalizeShape(shape.map(([r, c]) => [r, -c])); }
+function rotate(shape) { 
+    
+    const rotated = shape.map(([r, c]) => [c, -r]);
+    
+    return normalizeShape(rotated); 
+}
+
+function normalizeShape(shape) {
+    
+    if (shape.length === 0) {
+        return [];
+    }
+
+    
+    const anchorR = shape[0][0];
+    const anchorC = shape[0][1];
+
+    
+    return shape.map(([r, c]) => [r - anchorR, c - anchorC]);
+}
+    function addShape(set, shape) {
+        const sortedShape = shape.slice().sort((a,b) => a[0] - b[0] || a[1] - b[1]);
+        set.add(JSON.stringify(sortedShape));
+    }
+
+    function preprocessPieces(rawPieces) {
+        const processed = rawPieces.map(p => ({
+            ...p,
+            orientations: generatePieceOrientations(p.shape),
+            size: p.shape.length
+        }));
+        
+        processed.sort((a, b) => b.size - a.size);
+        return processed;
+    }
+
+    
+    function createPieceElement(piece) {
+        const wrapper = document.createElement('div');
+        wrapper.className = 'piece-preview-wrapper';
+        wrapper.dataset.pieceId = piece.id;
+        const piecePreview = document.createElement('div');
+        piecePreview.className = 'piece-preview';
+        piecePreview.title = `大小: ${piece.shape.length}`;
+        const shape = piece.shape;
+        const width = Math.max(...shape.map(p => p[1])) + 1;
+        const height = Math.max(...shape.map(p => p[0])) + 1;
+        piecePreview.style.gridTemplateColumns = `repeat(${width}, 12px)`;
+        piecePreview.style.gridTemplateRows = `repeat(${height}, 12px)`;
+        const tempGrid = Array(height).fill(null).map(() => Array(width).fill(null));
+        shape.forEach(([r,c]) => { if (tempGrid[r]) tempGrid[r][c] = true; });
+        for (let r = 0; r < height; r++) {
+            for (let c = 0; c < width; c++) {
+                const block = document.createElement('div');
+                block.className = 'preview-block';
+                if (tempGrid[r]?.[c]) block.style.backgroundColor = piece.color;
+                piecePreview.appendChild(block);
+            }
+        }
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'delete-piece-btn';
+        deleteBtn.innerHTML = '×';
+        deleteBtn.onclick = (e) => { e.stopPropagation(); deletePiece(piece.id); };
+        wrapper.appendChild(deleteBtn);
+        wrapper.appendChild(piecePreview);
+        return wrapper;
+    }
+
+    function renderPieces() {
+        pieceContainer.innerHTML = '';
+        state.pieces.forEach(piece => {
+            const pieceEl = createPieceElement(piece);
+            pieceContainer.appendChild(pieceEl);
+        });
+    }
+    
+    function appendPieceWithAnimation(piece) {
+        const pieceEl = createPieceElement(piece);
+        pieceEl.style.opacity = '0';
+        pieceEl.style.transform = 'scale(0.5)';
+        pieceContainer.appendChild(pieceEl);
+        requestAnimationFrame(() => {
+            pieceEl.style.opacity = '';
+            pieceEl.style.transform = '';
+        });
+    }
+
+    function deletePiece(id) {
+        const pieceEl = pieceContainer.querySelector(`[data-piece-id="${id}"]`);
+        if (!pieceEl) return;
+        pieceEl.classList.add('removing');
+        pieceEl.addEventListener('transitionend', () => {
+            state.pieces = state.pieces.filter(p => p.id !== id);
+            pieceEl.remove();
+            resetSolverState();
+        }, { once: true });
+    }
+
+    async function findNextSolution() {
+        if (state.isSolving) return;
+
+        if (!state.solverGenerator) {
+            if(state.rows * state.cols === 0) { statusDiv.textContent = "请先设置棋盘。"; return; }
+            let totalPieceArea = state.pieces.reduce((sum, p) => sum + p.shape.length, 0);
+            if (state.rows * state.cols > totalPieceArea) {
+                 statusDiv.textContent = "错误：拼图块总面积必须大于等于棋盘面积。";
+                 return;
+            }
+            const piecesToUse = preprocessPieces(state.pieces);
+            piecesToUse.forEach(p => p.used = false);
+            state.solverGenerator = backtrack(piecesToUse);
+        }
+
+        setSolvingUIState(true);
+        statusDiv.textContent = '正在寻找下一个解...';
+
+        try {
+            const result = await state.solverGenerator.next();
+            if (state.isSolving) {
+                 if (!result.done) {
+                    const placements = result.value;
+                    state.solutions.push(placements);
+                    state.currentSolutionIndex = state.solutions.length - 1;
+                    renderSolution(placements);
+                    updateSolutionUI();
+                } else {
+                    statusDiv.textContent = `没有更多解了。(共尝试 ${state.nodesVisited.toLocaleString()} 次)`;
+                    state.solverGenerator = null; 
+                }
+            }
+        } catch(e) {
+            if (e.message !== "Solver stopped by user.") console.error("Solver error:", e);
+        } finally {
+            if (state.isSolving) setSolvingUIState(false);
+        }
+    }
+    
+    
+    function findNextEmptyCell() {
+        let minNeighbors = -1;
+        let bestPos = null;
+
+        for (let r = 0; r < state.rows; r++) {
+            for (let c = 0; c < state.cols; c++) {
+                if (state.grid[r][c] === 0) {
+                    let neighbors = 0;
+                    if (r > 0 && state.grid[r-1][c] !== 0) neighbors++;
+                    if (r < state.rows - 1 && state.grid[r+1][c] !== 0) neighbors++;
+                    if (c > 0 && state.grid[r][c-1] !== 0) neighbors++;
+                    if (c < state.cols - 1 && state.grid[r][c+1] !== 0) neighbors++;
+                    
+                    if (neighbors > minNeighbors) {
+                        minNeighbors = neighbors;
+                        bestPos = { r, c };
+                    }
+                }
+            }
+        }
+        return bestPos;
+    }
+
+    async function* backtrack(piecesToUse, placements = []) {
+        if (!state.isSolving) throw new Error("Solver stopped by user.");
+
+        state.nodesVisited++;
+        if (state.nodesVisited % 100000 === 0) {
+            statusDiv.textContent = `求解中... (尝试: ${state.nodesVisited.toLocaleString()})`;
+            renderCurrentGridState(state.grid);
+            await new Promise(resolve => setTimeout(resolve, 0));
+        }
+        
+        const pos = findNextEmptyCell();
+        if (pos === null) {
+            yield placements;
+            return;
+        }
+        
+        const { r, c } = pos;
+
+        for (let i = 0; i < piecesToUse.length; i++) {
+            const piece = piecesToUse[i];
+            if (piece.used) continue;
+
+            for (let j = 0; j < piece.orientations.length; j++) {
+                const orientation = piece.orientations[j];
+                if (canPlace(r, c, orientation)) {
+                    place(r, c, orientation, piece.id, piece.color);
+                    piece.used = true;
+                    
+                    
+                    yield* backtrack(piecesToUse, [...placements, { piece, orientationIndex: j, r, c }]);
+                    
+                    remove(r, c, orientation);
+                    piece.used = false;
+                }
+            }
+        }
+    }
+
+    function setSolvingUIState(solving) {
+        state.isSolving = solving;
+        stopBtn.style.display = solving ? 'inline-block' : 'none';
+        const hasSolutions = state.solutions.length > 0;
+        const generatorExists = state.solverGenerator !== null;
+        solveBtn.style.display = solving || hasSolutions ? 'none' : 'inline-block';
+        continueSolveBtn.style.display = !solving && hasSolutions ? 'inline-block' : 'none';
+        continueSolveBtn.disabled = solving || !generatorExists;
+        [setupBtn, clearBtn, createPieceBtn, importBtn, exportBtn, solveBtn].forEach(btn => btn.disabled = solving);
+    }
+    
+    function stopSolver() {
+        if (!state.isSolving) return;
+        statusDiv.textContent = `求解已停止。(已尝试 ${state.nodesVisited.toLocaleString()} 次)`;
+        setSolvingUIState(false);
+        renderCurrentGridState(state.grid);
+    }
+    
+    function canPlace(r, c, shape) {
+        for (const [dr, dc] of shape) {
+            const newR = r + dr;
+            const newC = c + dc;
+            if (newR < 0 || newC < 0 || newR >= state.rows || newC >= state.cols || state.grid[newR][newC] !== 0) return false;
+        }
+        return true;
+    }
+
+    function place(r, c, shape, id, color) { shape.forEach(([dr, dc]) => { state.grid[r + dr][c + dc] = { id, color }; }); }
+    function remove(r, c, shape) { shape.forEach(([dr, dc]) => { state.grid[r + dr][c + dc] = 0; }); }
+
+    
+    function renderSolution(placements) {
+        const targetGrid = Array(state.rows).fill(0).map(() => Array(state.cols).fill(0));
+        placements.forEach(p => {
+            const { piece, orientationIndex, r, c } = p;
+            const shape = piece.orientations[orientationIndex];
+            shape.forEach(([dr, dc]) => {
+                targetGrid[r + dr][c + dc] = { id: piece.id, color: piece.color };
+            });
+        });
+        renderCurrentGridState(targetGrid);
+    }
+
+function renderCurrentGridState(targetGrid) {
+    const cells = boardElement.children;
+    
+    for (let r = 0; r < state.rows; r++) {
+        for (let c = 0; c < state.cols; c++) {
+            const cellIndex = r * state.cols + c;
+            const cellDiv = cells[cellIndex];
+            if (!cellDiv) continue;
+            
+            const currentCell = targetGrid[r][c];
+            const previousCell = state.previousGrid[r][c];
+            
+
+            if (currentCell === 0) {
+                
+                cellDiv.style.backgroundColor = 'transparent';
+                cellDiv.style.border = DEFAULT_BORDER_STYLE; 
+            } else {
+                
+                cellDiv.style.backgroundColor = currentCell.color;
+                cellDiv.style.borderTop = (r === 0 || targetGrid[r - 1][c].id !== currentCell.id) 
+                    ? BORDER_STYLE 
+                    : DEFAULT_BORDER_STYLE;
+
+                
+                cellDiv.style.borderBottom = (r === state.rows - 1 || targetGrid[r + 1][c].id !== currentCell.id) 
+                    ? BORDER_STYLE 
+                    : DEFAULT_BORDER_STYLE;
+
+                
+                cellDiv.style.borderLeft = (c === 0 || targetGrid[r][c - 1].id !== currentCell.id) 
+                    ? BORDER_STYLE 
+                    : DEFAULT_BORDER_STYLE;
+
+                
+                cellDiv.style.borderRight = (c === state.cols - 1 || targetGrid[r][c + 1].id !== currentCell.id) 
+                    ? BORDER_STYLE 
+                    : DEFAULT_BORDER_STYLE;
+            }
+        }
+    }
+    
+}
+    
+    function updateSolutionUI() {
+        if (state.solutions.length > 0) {
+            solutionNavControls.style.display = 'flex';
+            solutionInfo.textContent = `解 ${state.currentSolutionIndex + 1} / ${state.solutions.length}`;
+            statusDiv.textContent = `找到第 ${state.solutions.length} 个解。(共尝试 ${state.nodesVisited.toLocaleString()} 次)`;
+            prevSolutionBtn.disabled = state.currentSolutionIndex === 0;
+            nextSolutionBtn.disabled = state.currentSolutionIndex === state.solutions.length - 1;
+        } else {
+            solutionNavControls.style.display = 'none';
+        }
+    }
+
+    
+    function hexToRgb(hex) {
+        const result = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+        return result ? {
+            r: parseInt(result[1], 16),
+            g: parseInt(result[2], 16),
+            b: parseInt(result[3], 16)
+        } : null;
+    }
+
+    function colorDistance(rgb1, rgb2) {
+        const dr = rgb1.r - rgb2.r;
+        const dg = rgb1.g - rgb2.g;
+        const db = rgb1.b - rgb2.b;
+        return Math.sqrt(dr * dr + dg * dg + db * db);
+    }
+
+    function suggestNewPieceColor() {
+        const candidateColors = [
+            "#E53935", 
+            "#1E88E5", 
+            "#43A047", 
+            "#FDD835", 
+            "#8E24AA", 
+            "#FB8C00", 
+            "#00ACC1", 
+            "#D81B60", 
+            "#5E35B1", 
+            "#039BE5", 
+            "#7CB342", 
+            "#F4511E", 
+        ];
+
+        const existingColorsHex = state.pieces.map(p => p.color);
+        existingColorsHex.push("#FFFFFF"); 
+
+        const existingColorsRgb = existingColorsHex.map(hexToRgb).filter(Boolean);
+
+        if (existingColorsRgb.length === 0 || candidateColors.every(hex=>existingColorsHex.includes(hex.toLowerCase()))) {
+            return candidateColors[Math.floor(Math.random()*candidateColors.length)];
+        }
+
+        let bestColor = candidateColors[Math.floor(Math.random()*candidateColors.length)];
+        let maxMinDistance = -1;
+
+        for (const candidateHex of candidateColors) {
+            const candidateRgb = hexToRgb(candidateHex);
+            if (!candidateRgb) continue;
+
+            let minDistance = Infinity;
+            for (const existingRgb of existingColorsRgb) {
+                const distance = colorDistance(candidateRgb, existingRgb);
+                if (distance < minDistance) {
+                    minDistance = distance;
+                }
+            }
+
+            if (minDistance > maxMinDistance) {
+                maxMinDistance = minDistance;
+                bestColor = candidateHex;
+            }
+        }
+        return bestColor;
+    }
+    
+    
+    function initEventListeners() {
+        setupBtn.addEventListener('click', setupBoard);
+        clearBtn.addEventListener('click', setupBoard);
+        solveBtn.addEventListener('click', findNextSolution);
+        continueSolveBtn.addEventListener('click', findNextSolution);
+        stopBtn.addEventListener('click', stopSolver);
+        prevSolutionBtn.addEventListener('click', () => {
+            if (state.currentSolutionIndex > 0) {
+                state.currentSolutionIndex--;
+                renderSolution(state.solutions[state.currentSolutionIndex]);
+                updateSolutionUI();
+            }
+        });
+        nextSolutionBtn.addEventListener('click', () => {
+            if (state.currentSolutionIndex < state.solutions.length - 1) {
+                state.currentSolutionIndex++;
+                renderSolution(state.solutions[state.currentSolutionIndex]);
+                updateSolutionUI();
+            }
+        });
+        exportBtn.addEventListener('click', exportConfiguration);
+        importBtn.addEventListener('click', () => importFile.click());
+        importFile.addEventListener('change', importConfiguration);
+        createPieceBtn.addEventListener('click', showCreatorModal);
+        cancelCreatorBtn.addEventListener('click', hideCreatorModal);
+        savePieceBtn.addEventListener('click', () => {
+            const selectedCells = Array.from(creatorGrid.querySelectorAll('.selected'));
+            if (selectedCells.length === 0) { alert('请至少选择一个方块来创建拼图！'); return; }
+            const shape = selectedCells.map(cell => {
+                const index = parseInt(cell.dataset.index);
+                return [Math.floor(index / 5), index % 5];
+            });
+            const newPiece = {
+                id: `custom-${state.pieceIdCounter++}`,
+                color: pieceColorInput.value,
+                shape: shape
+            };
+            state.pieces.push(newPiece);
+            appendPieceWithAnimation(newPiece);
+            resetSolverState();
+            hideCreatorModal();
+        });
+    }
+    
+    
+    
+    function initCreator() {
+        creatorGrid.innerHTML = '';
+        for (let i = 0; i < 25; i++) {
+            const cell = document.createElement('div');
+            cell.className = 'creator-cell';
+            cell.dataset.index = i;
+            cell.addEventListener('click', () => cell.classList.toggle('selected'));
+            creatorGrid.appendChild(cell);
+        }
+    }
+    function exportConfiguration() {
+        const config = {
+            rows: parseInt(rowsInput.value),
+            cols: parseInt(colsInput.value),
+            pieces: state.pieces.map(({ id, color, shape }) => ({ id, color, shape }))
+        };
+        const dataStr = "data:text/json;charset=utf-8," + encodeURIComponent(JSON.stringify(config, null, 2));
+        const downloadAnchorNode = document.createElement('a');
+        downloadAnchorNode.setAttribute("href", dataStr);
+        downloadAnchorNode.setAttribute("download", "puzzle_config.json");
+        document.body.appendChild(downloadAnchorNode);
+        downloadAnchorNode.click();
+        downloadAnchorNode.remove();
+        statusDiv.textContent = "配置已导出！";
+    }
+    function importConfiguration(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = function(e) {
+            try {
+                const config = JSON.parse(e.target.result);
+                if (config.rows && config.cols && Array.isArray(config.pieces)) {
+                    rowsInput.value = config.rows;
+                    colsInput.value = config.cols;
+                    state.pieces = config.pieces;
+                    state.pieceIdCounter = Math.max(0, ...state.pieces.map(p => {
+                        const num = (typeof p.id === 'string') ? p.id.match(/\d+$/) : null;
+                        return num ? parseInt(num[0]) : 0;
+                    })) + 1;
+                    setupBoard();
+                    renderPieces();
+                    statusDiv.textContent = "配置导入成功！";
+                } else { throw new Error("Invalid config file format."); }
+            } catch (error) {
+                statusDiv.textContent = "导入失败：文件格式错误。";
+                console.error(error);
+            }
+        };
+        reader.readAsText(file);
+        importFile.value = '';
+    }
+    function showCreatorModal() {
+        initCreator();
+        
+        pieceColorInput.value = suggestNewPieceColor();
+        creatorModal.style.display = 'flex';
+        requestAnimationFrame(() => { creatorModal.classList.add('visible'); });
+    }
+    function hideCreatorModal() {
+        creatorModal.classList.remove('visible');
+        creatorModal.addEventListener('transitionend', () => {
+            creatorModal.style.display = 'none';
+        }, { once: true });
+    }
+
+    
+    state.pieces = initialPieces.map(p => ({ ...p, id: `default-${state.pieceIdCounter++}` }));
+    state.rows = 6;
+    state.cols = 6;
+    rowsInput.value = state.rows;
+    colsInput.value = state.cols;
+    renderPieces();
+    initEventListeners();
+    setupBoard();
+</script>
+</body>
+</html>
